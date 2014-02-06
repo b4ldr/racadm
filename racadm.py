@@ -329,6 +329,184 @@ class Racadm(object):
 
         return rac_datetime
 
+    def _get_config(self, conf_group, conf_object=None, conf_index=None):
+        '''generic config setter'''
+        command = 'getconfig -g {}'.format(conf_group)
+        if conf_object:
+            command += ' -o {}'.format(conf_object)
+        if conf_index:
+            command += ' -i {}'.format(conf_index)
+        return self.basic_command(command)
+
+    def _parse_config_group(self, message):
+        '''parse genertic config list'''
+        config = {}
+        for line in message.split('\n'):
+            if '=' in line:
+                key, value = line.lstrip('#').split('=')
+                config[key.strip()] = value.strip()
+        return config
+
+    def _get_config_group_index(self, conf_group, conf_index, conf_object=None):
+        '''genreic function to get a config item that has no index'''
+        if conf_object:
+            return self._get_config(conf_group, conf_object, conf_index)
+        return self._parse_config_group(self._get_config(conf_group, conf_object, conf_index))
+
+    def _get_config_group_no_index(self, conf_group, conf_object=None):
+        '''genreic function to get a config item that has no index'''
+        if conf_object:
+            return self._get_config(conf_group, conf_object)
+        return self._parse_config_group(self._get_config(conf_group))
+
+    def get_rac_info(self, conf_object=None):
+        '''get idRacInfo'''
+        return self._get_config_group_no_index('idRacInfo', conf_object)
+
+    def get_remote_hosts(self, conf_object=None):
+        '''get cfgRemoteHosts'''
+        return self._get_config_group_no_index('cfgRemoteHosts', conf_object)
+
+    def get_user(self, conf_index, conf_object=None):
+        '''get cfgUserAdmin'''
+        return self._get_config_group_index('cfgUserAdmin', conf_index, conf_object)
+
+    def get_email_alert(self, conf_index, conf_object=None):
+        '''get cfgEmailAlert'''
+        return self._get_config_group_index('cfgEmailAlert', conf_index, conf_object)
+
+    def get_session_management(self, conf_object=None):
+        '''get cfgSessionManagement'''
+        return self._get_config_group_no_index('cfgSessionManagement', conf_object)
+
+    def get_serial(self, conf_object=None):
+        '''get cfgSerial'''
+        return self._get_config_group_no_index('cfgSerial', conf_object)
+
+    def get_oob_snmp(self, conf_object=None):
+        '''get cfgOobSnmp'''
+        return self._get_config_group_no_index('cfgOobSnmp', conf_object)
+
+    def get_rac_tuning(self, conf_object=None):
+        '''get cfgRacTuning'''
+        return self._get_config_group_no_index('cfgRacTuning', conf_object)
+
+    def get_rac_guest_os(self, conf_object=None):
+        '''get ifcRacManagedNodeOs'''
+        return self._get_config_group_no_index('ifcRacManagedNodeOs', conf_object)
+
+    def get_rac_security(self, conf_object=None):
+        '''get cfgRacSecurity'''
+        return self._get_config_group_no_index('cfgRacSecurity', conf_object)
+
+    def get_rac_virtual_media(self, conf_object=None):
+        '''get cfgRacVirtual'''
+        return self._get_config_group_no_index('cfgRacVirtual', conf_object)
+
+    def get_rac_active_directory(self, conf_object=None):
+        '''get cfgActiveDirectory'''
+        return self._get_config_group_no_index('cfgActiveDirectory', conf_object)
+
+    def get_rac_active_directory(self, conf_object=None):
+        '''get cfgActiveDirectory'''
+        return self._get_config_group_no_index('cfgActiveDirectory', conf_object)
+
+    def get_rac_ldap(self, conf_object=None):
+        '''get cfgLDAP'''
+        return self._get_config_group_no_index('cfgLDAP', conf_object)
+
+    def get_ldap_group(self, conf_index, conf_object=None):
+        '''get cfgLdapRoleGroup'''
+        return self._get_config_group_index('cfgLdapRoleGroup', conf_index, conf_object)
+
+    def get_rac_logging(self, conf_object=None):
+        '''get cfgLogging'''
+        return self._get_config_group_no_index('cfgLogging', conf_object)
+
+    def get_ad_schema(self, conf_index, conf_object=None):
+        '''get cfgStandardSchema'''
+        return self._get_config_group_index('cfgStandardSchema', conf_index, conf_object)
+
+    def get_rac_ipmi_serial(self, conf_object=None):
+        '''get cfgIpmiSerial'''
+        return self._get_config_group_no_index('cfgIpmiSerial', conf_object)
+
+    def get_rac_ipmi_sol(self, conf_object=None):
+        '''get cfgIpmiSol'''
+        return self._get_config_group_no_index('cfgIpmiSol', conf_object)
+
+    def get_rac_ipmi_lan(self, conf_object=None):
+        '''get cfgIpmiLan'''
+        return self._get_config_group_no_index('cfgIpmiLan', conf_object)
+
+    def get_ipmi_v4_event_filter(self, conf_index, conf_object=None):
+        '''get cfgIpmiPef (not sure what this is)'''
+        return self._get_config_group_index('cfgIpmiPef', conf_index, conf_object)
+
+    def get_server_power(self, conf_object=None):
+        '''get cfgServerPower'''
+        return self._get_config_group_no_index('cfgServerPower', conf_object)
+
+    def get_server_power_supply(self, conf_index, conf_object=None):
+        '''get cfgServerPowerSupply'''
+        return self._get_config_group_index('cfgServerPowerSupply', conf_index, conf_object)
+
+    def get_vflash(self, conf_object=None):
+        '''get cfgVFlashSD'''
+        return self._get_config_group_no_index('cfgVFlashSD', conf_object)
+
+    def get_vflash_partition(self, conf_index, conf_object=None):
+        '''get cfgVFlashPartition'''
+        return self._get_config_group_index('cfgVFlashPartition', conf_index, conf_object)
+
+    def get_ad_user_domains(self, conf_index, conf_object=None):
+        '''get cfgUserDomain'''
+        return self._get_config_group_index('cfgUserDomain', conf_index, conf_object)
+
+    def get_smart_card(self, conf_object=None):
+        '''get cfgSmartCard'''
+        return self._get_config_group_no_index('cfgSmartCard', conf_object)
+
+    def get_server_info(self, conf_object=None):
+        '''get cfgServerInfo'''
+        return self._get_config_group_no_index('cfgServerInfo', conf_object)
+
+    def get_power_redundancy(self, conf_index, conf_object=None):
+        '''get cfgSensorRedundancy'''
+        return self._get_config_group_index('cfgSensorRedundancy', conf_index, conf_object)
+
+    def get_network_config(self, conf_object=None):
+        '''get cfgLanNetworking'''
+        return self._get_config_group_no_index('cfgLanNetworking', conf_object)
+
+    def get_static_network_config(self, conf_object=None):
+        '''get cfgStaticLanNetworking (not sure why we have this and the above?)'''
+        return self._get_config_group_no_index('cfgStaticLanNetworking', conf_object)
+
+    def get_ethernet_config(self, conf_object=None):
+        '''get cfgNetTuning '''
+        return self._get_config_group_no_index('cfgNetTuning', conf_object)
+
+    def get_v6_network_config(self, conf_object=None):
+        '''get cfgIPv6LanNetworking'''
+        return self._get_config_group_no_index('cfgIPv6LanNetworking', conf_object)
+
+    def get_static_v6_network_config(self, conf_object=None):
+        '''get cfgIPv6LanNetworking (not sure why we have this and the above?)'''
+        return self._get_config_group_no_index('cfgIPv6LanNetworking', conf_object)
+
+    def get_static_v6_url(self, conf_object=None):
+        '''get cfgIPv6URL (not sure what this is)'''
+        return self._get_config_group_no_index('cfgIPv6LanNetworking', conf_object)
+
+    def _set_config(self, conf_group, conf_arg, conf_obj=None, conf_index=None):
+        '''generic config setter'''
+        command = 'config -g {}'.format(conf_group)
+        if conf_obj:
+            command += ' -o {}'.format(conf_obj)
+            if conf_index:
+                command += ' -i {}'.format(conf_index)
+        return self.basic_command('{} {}'.format(command, conf_arg))
    
     def set_led(self, action):
         '''get the Dell chassis name'''
