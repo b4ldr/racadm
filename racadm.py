@@ -180,28 +180,34 @@ class Racadm(object):
         return self.basic_command('getassettag -m {}'.format(module))
             
     def get_chassis_name(self):
-        '''rtrive the Dell chassis name'''
+        '''get the Dell chassis name'''
         #i dont have anything to test this on
         return self.basic_command('chassisname')
 
-    def get_network_config(self):
-        '''rtrive the Dell chassis name'''
-        #i dont have anything to test this on
-        network = {}
+    def _basic_table_command(self,command):
+        '''parse a basic table'''
+        parsed_table = {}
         section_pattern = re.compile('\n?([^\n=]+[^:]):\n(.+?)\\n\\n', re.DOTALL)
-        status, message = self._raw_command('getniccfg')
+        status, message = self._raw_command(command)
         if status == RacStatus.RAC_STATUS_SUCCESS:
             for section, settings in re.findall(section_pattern, message ):
-                section_str = section.strip().replace(" ", "_")
-                if section_str not in network:
-                    network[section_str] = {}
+                section_str = section.strip().replace(" ", "_").lower()
+                if section_str not in parsed_table:
+                    parsed_table[section_str] = {}
                 for line in settings.split('\n'):
                     key, value = line.split('=')
-                    network[section_str].update({ key.strip().replace(" ", "_")\
+                    parsed_table[section_str].update({ key.strip().replace(" ", "_").lower()\
                             : value.strip() })
-            logging.debug('parsed netconf: {}'.format(network))
+            logging.debug('parsed {}: {}'.format(command, parsed_table)) 
+        return parsed_table 
 
-        return network
+    def get_system_info(self):
+        '''get the Dell chassis name'''
+        return self._basic_table_command('getsysinfo')
+
+    def get_network_config(self):
+        '''get the Dell network config'''
+        return self._basic_table_command('getniccfg')
 
     def get_led_state(self):
         '''rtrive the Dell chassis name'''
@@ -241,7 +247,7 @@ def main():
     args = arg_parse()
     racadm = Racadm(args.hostname, args.username, args.password, 
             args.port, log_level=logging.DEBUG)
-    racadm.get_network_config()
+    racadm.get_system_info()
 
 if __name__ == '__main__':
     main()
