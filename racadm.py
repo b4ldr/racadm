@@ -35,9 +35,18 @@ class RacStatus(object):
     RAC_STATUS_BUSY = 0x19
 
 class Racadm(object):
+    '''Object used to interact with iDRAC servers'''
 
     def __init__(self, hostname='localhost', username='root', password='calvin', port=443, log_level=logging.INFO, verify=False):
-        '''initialise variables'''
+        '''
+        initialise variables
+        @hostname = the iDrac hostname to connect to
+        @username = usernem to use for login
+        @password = usernem to use for login
+        @port = server port to connect to
+        @log_level = looggin level to use as implmented by the loggin module
+        @verify = whether to verify ssl certificates
+        '''
 
         self.hostname = hostname
         self.username = username
@@ -51,7 +60,12 @@ class Racadm(object):
         self.login_state = None
 
     def _get_response(self, uri, payload):
-        '''get a payload from uri'''
+        '''
+        get a payload from uri
+        
+        @uri = the uri to talk to
+        @payload = the payload to send (as a post)
+        '''
 
         logging.debug('>{}'.format(payload))
         response = self.session.post(uri, data=payload, verify=self.verify)
@@ -59,13 +73,23 @@ class Racadm(object):
         return response.content
 
     def _search_xml(self, xml_message, element):
-        '''search an xml message for a specific element'''
+        '''
+        search an xml message for a specific element
+        use the ElementTree libary to get an element matchin .\\${element}
+
+        @xml_message = the xml payload to search
+        @element =  the element to find
+        '''
 
         root_element = ET.fromstring(xml_message)
         return root_element.find('.//{}'.format(element)).text
 
     def _parse_login(self, response):
-        '''check that login succeeded'''
+        '''
+        check if we logged in successfuly and set the session cookie if we did
+
+        @response = the respons we need to parse to see if we where successful
+        '''
 
         sid = self._search_xml(response, 'SID')
         self.login_state = self._search_xml(response, 'STATENAME')
@@ -79,7 +103,9 @@ class Racadm(object):
         return False
 
     def login(self):
-        '''Login to the drac server and get a cookie'''
+        '''
+        Login to the drac server and get a cookie. Use details pased during initialisation
+        '''
         
         uri = '{}login'.format(self.cgiuri)
         payload = '<?xml version=\'1.0\'?><LOGIN><REQ>'\
@@ -89,7 +115,12 @@ class Racadm(object):
         return self._parse_login(content)
 
     def _parse_command(self, response, command):
-        '''check that command succeeded'''
+        '''
+        check response and decide if we where successfull
+
+        @response = response to check
+        @command = command that was executed, used to add info to log messages
+        '''
 
         command_status = int(self._search_xml(response, 'CMDRC'),16)
         command_output = self._search_xml(response, 'CMDOUTPUT').strip()
@@ -107,7 +138,11 @@ class Racadm(object):
         return command_status, command_output
 
     def _convert_rac_time(self, date_str):
-        '''convert string date of the form Thu Feb  6 06:38:14 2014 to datetime'''
+        '''
+        convert string date of the form Thu Feb  6 06:38:14 2014 to a datetime object
+        
+        @date_str = string of the form "Thu Feb  6 06:38:14 2014"
+        '''
         months = { 'Jan': 1, 'Feb':2, 'Mar':3, 'Apr':4, 'May':5, 'Jun':6,
                 'Jul':7, 'Aug':8, 'Sep':9, 'Oct':10, 'Nov':11, 'Dec':12}
         date_tmp = date_str.split()
@@ -116,7 +151,12 @@ class Racadm(object):
                 int(time_tmp[0]), int(time_tmp[1]), int(time_tmp[2]))
         
     def _raw_command(self, command):
-        '''run the racadm command'''
+        '''
+        run a raw racadm command
+        
+        @command = command to run see the following for details
+        ftp://ftp.dell.com/Manuals/all-products/esuprt_electronics/esuprt_software/esuprt_remote_ent_sys_mgmt/integrated-dell-remote-access-cntrllr-6-for-monolithic-srvr-v1.7_Reference%20Guide_en-us.pdf
+        '''
 
         if self.login_state != 'OK':
             logging.info('No valid session attempting login')
@@ -132,7 +172,9 @@ class Racadm(object):
         return self._parse_command(content, command)
 
     def get_arp_table(self):
-        '''return arp table'''
+        '''
+        parse the arp table of the drac interface
+        '''
         status, message = self._raw_command('arp')
         arp_table = []
         if status == RacStatus.RAC_STATUS_SUCCESS:
@@ -147,13 +189,22 @@ class Racadm(object):
         return arp_table
 
     def basic_command(self, command):
-        '''run a command that needs no processing'''
+        '''
+        command wrapper to preform simple checks
+        
+        @command = command to run
+        '''
         status, message = self._raw_command(command)
         if status == RacStatus.RAC_STATUS_SUCCESS:
             return message
         return False
 
     def clear_log(self, log_type='rac'):
+        '''
+        clear a drac log
+
+        @log_type = the log you want to clear.  allowed values are rac and sel
+        '''
         if log_type.lower() == 'rac':
             command = 'clrraclog'
         elif log_type.lower() == 'sel':
@@ -164,36 +215,49 @@ class Racadm(object):
         return self.basic_command(command)
 
     def get_asset_tag(self, module='chassis'):
-        '''rtrive the Dell assit tag'''
+        '''
+        retrive the asset tag of a specific module
+
+        @module = the module of the asset tag you want
+
+        WARN: untested
+        '''
         #i dont have anything to test this on
         logging.warn('This method is untested')
         return self.basic_command('getassettag -m {}'.format(module))
             
     def get_chassis_name(self):
-        '''get the Dell chassis name'''
+        '''
+        retrive the chassis name of a specific module
+
+        WARN: untested
+        '''
         #i dont have anything to test this on
         logging.warn('This method is untested')
         return self.basic_command('chassisname')
 
     def get_sensor_info(self):
-        '''get the Dell chassis name'''
+        '''
+        Retrive the snesor details from drac card
+        '''
+
         #im not parsing this output. its to fucked 
         return self.basic_command('getsensorinfo')
 
     def get_service_tag(self):
-        '''get the Dell chassis name'''
+        '''get the Dell service tag'''
         return self.basic_command('getsvctag')
 
     def get_usc_version(self):
-        '''get the Dell chassis name'''
+        '''get the usc versiob'''
         return self.basic_command('getuscversion')
 
     def get_rac_reset(self):
-        '''get the Dell chassis name'''
+        '''Reset the drac card'''
         return self.basic_command('racreset')
 
     def get_software_inventory(self):
-        '''get the Dell chassis name'''
+        '''return a dictionary containing the drac sowftare inventory'''
         inventory = []
         item = {}
         result = self.basic_command('swinventory')
@@ -208,7 +272,10 @@ class Racadm(object):
         return inventory
 
     def get_version(self):
-        '''get the Dell chassis name'''
+        '''
+        return a dictionary containing the software versions of the various componets 
+        e.g. bios, drac & usc
+        '''
         versions = {}
         result = self.basic_command('getversion')
         for line in result.split('\n'):
@@ -219,8 +286,9 @@ class Racadm(object):
         return versions
  
     def get_session_info(self):
-        '''get the Dell chassis name'''
-        #
+        '''
+        rturn a dictionary containing information about the active sessions
+        '''
         sessions = []
         results = self.basic_command('getssninfo')
         if results:
@@ -241,7 +309,7 @@ class Racadm(object):
         return sessions
 
     def get_log(self, log_type):
-        '''get the Dell specified log type'''
+        ''' get the Dell specified log type'''
         logging.warn('This method is untested')
         #getraclog returns no data
         #getsel and gettracelog both responded with bad xml and
@@ -255,7 +323,12 @@ class Racadm(object):
         }.get(log_type.lower(), 'getraclog'))
 
     def _basic_table_command(self, command):
-        '''very generic table parser'''
+        '''
+        very generic table parser.  tries to parse the output and return more 
+        sendible python object
+        
+        @command to run
+        '''
         parsed_table ={}
         parsed_items = {}
         section = None
@@ -279,37 +352,20 @@ class Racadm(object):
             logging.debug('parsed {}: {}'.format(command, parsed_table)) 
         return parsed_table 
 
-    def _basic_table_command_regex(self,command):
-        '''parse a basic table'''
-        parsed_table = {}
-        section_pattern = re.compile('\n?([^\n=]+[^:]):.*?\n(.+?)\\n\\n', re.DOTALL)
-        status, message = self._raw_command(command)
-        if status == RacStatus.RAC_STATUS_SUCCESS:
-            for section, settings in re.findall(section_pattern, message ):
-                section_str = section.strip().replace(" ", "_").lower()
-                if section_str not in parsed_table:
-                    parsed_table[section_str] = {}
-                for line in settings.split('\n'):
-                    key, value = line.split('=')
-                    parsed_table[section_str].update({ key.strip().replace(" ", "_").lower()\
-                            : value.strip() })
-            logging.debug('parsed {}: {}'.format(command, parsed_table)) 
-        return parsed_table 
-
     def get_system_info(self):
-        '''get the Dell chassis name'''
+        '''return a dictionory of the drac system information'''
         return self._basic_table_command('getsysinfo')
 
     def get_network_config(self):
-        '''get the Dell network config'''
+        '''return a dictionory of the drac network config'''
         return self._basic_table_command('getniccfg')
 
     def get_hardware_inventory(self):
-        '''get the Dell network config'''
+        '''return a dictionory of the drac hardware information'''
         return self._basic_table_command('hwinventory')
 
     def get_led_state(self):
-        '''rtrive the Dell chassis name'''
+        '''return the state of the server status led'''
         #i dont have anything to test this on
         status, message = self._raw_command('getled')
         led_state = False
@@ -319,7 +375,9 @@ class Racadm(object):
         return led_state
 
     def get_rac_time(self):
-        '''rtrive the Dell chassis name'''
+        '''
+        return a datetime object representing the rac system time
+        '''
         #i dont have anything to test this on
         status, message = self._raw_command('getractime')
         rac_datetime = False
@@ -330,7 +388,14 @@ class Racadm(object):
         return rac_datetime
 
     def _get_config(self, conf_group, conf_object=None, conf_index=None):
-        '''generic config setter'''
+        '''
+        generic function to fetch config of the form
+        racadm getconfig -g ${conf_group} -o ${conf_object} -i ${conf_index}
+
+        @conf_group = the config group to query
+        @conf_object = the config object to query
+        @conf_index = the config index to query
+        '''
         command = 'getconfig -g {}'.format(conf_group)
         if conf_object:
             command += ' -o {}'.format(conf_object)
@@ -339,7 +404,11 @@ class Racadm(object):
         return self.basic_command(command)
 
     def _parse_config_group(self, message):
-        '''parse genertic config list'''
+        '''
+        used to parse the date from _get_config.  which is mainly of the form 
+        key=value
+        however readonly valuse are prefixed with '#' so we chop that as well
+        '''
         config = {}
         for line in message.split('\n'):
             if '=' in line:
@@ -348,13 +417,24 @@ class Racadm(object):
         return config
 
     def _get_config_group_index(self, conf_group, conf_index, conf_object=None):
-        '''genreic function to get a config item that has no index'''
+        '''
+        genreic function to get a config item that requiers an index
+        
+        @conf_group = group to query
+        @conf_index = index to query
+        @conf_object = object to query
+        '''
         if conf_object:
             return self._get_config(conf_group, conf_object, conf_index)
         return self._parse_config_group(self._get_config(conf_group, conf_object, conf_index))
 
     def _get_config_group_no_index(self, conf_group, conf_object=None):
-        '''genreic function to get a config item that has no index'''
+        '''
+        genreic function to get a config item that requiers no index
+        
+        @conf_group = group to query
+        @conf_object = object to query
+        '''
         if conf_object:
             return self._get_config(conf_group, conf_object)
         return self._parse_config_group(self._get_config(conf_group))
@@ -508,14 +588,18 @@ class Racadm(object):
                 command += ' -i {}'.format(conf_index)
         return self.basic_command('{} {}'.format(command, conf_arg))
    
-    def set_led(self, action):
-        '''get the Dell chassis name'''
+    def set_led(self, state):
+        '''
+        set the led to a specific state
+        
+        @state = the state you want the led to be in
+        '''
         action = { 'off': 0, 'no_blink': 0, 'no_blinking': 0, 'on': 1, 'blink': 1, 'blinking': 1,
-                }.get(action, action)
+                }.get(state, state)
         if action not in [0, 1]:
-            logging.warn('set_let not support action {}'.format(action))
+            logging.warn('set_let not support action {}'.format(state))
             return False
-        return self.basic_command('setled -l {}'.format(action))
+        return self.basic_command('setled -l {}'.format(state))
 
     def server_action(self, action='powerstatus'):
         action = {
@@ -533,6 +617,12 @@ class Racadm(object):
         return self.basic_command('serveraction {}'.format(action))
 
     def ping(self, address, address_family=4):
+        '''
+        ping an ip from the drac interface
+
+        @address = the address to ping
+        @address_family = the ip version to use
+        '''
         if int(address_family) not in [4,6]:
             logging.warn('address_family {} not supported'.format(address_family))
             return False
@@ -542,6 +632,12 @@ class Racadm(object):
         return self.basic_command(command)
 
     def traceroute(self, address, address_family=4):
+        '''
+        traceroute an ip from the drac interface
+
+        @address = the address to ping
+        @address_family = the ip version to use
+        '''
         #didn't work for me i think it is timeing out
         if int(address_family) not in [4,6]:
             logging.warn('address_family {} not supported'.format(address_family))
