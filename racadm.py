@@ -18,21 +18,21 @@ class RacStatus(object):
     RAC_STATUS_NOT_ALLOWED = 0x7
     RAC_STATUS_REQUIRED_PARAMETER_MISSING = 0x8
     RAC_STATUS_INPUT_PARAM_TOO_BIG = 0x9
-    RAC_STATUS_INPUT_BUFFER_TOO_SMALL = 0x10
-    RAC_STATUS_SYS_OPERATION_FAILED = 0x11
-    RAC_STATUS_MEM_ALLOC_FAILED = 0x12
-    RAC_STATUS_TIME_FUNC_FAILED = 0x13
-    RAC_STATUS_DATA_CONVERSION_FAILED = 0x14
-    RAC_STATUS_UNSUPPORTED_CFG = 0x15
-    RAC_STATUS_INVALID_FILE = 0x16
-    RAC_STATUS_FILE_OPEN_FAILED = 0x17
-    RAC_STATUS_FILE_READ_FAILED = 0x18
-    RAC_STATUS_FILE_WRITE_FAILED = 0x19
-    RAC_STATUS_RAC_NOT_PRESENT = 0x20
-    RAC_STATUS_RAC_NOT_READY = 0x21
-    RAC_STATUS_IPMI_NOT_READY = 0x22
-    RAC_STATUS_LOAD_LIB_FAILED = 0x23
-    RAC_STATUS_BUSY = 0x24
+    RAC_STATUS_INPUT_BUFFER_TOO_SMALL = 0xA
+    RAC_STATUS_SYS_OPERATION_FAILED = 0xB
+    RAC_STATUS_MEM_ALLOC_FAILED = 0xC
+    RAC_STATUS_TIME_FUNC_FAILED = 0xD
+    RAC_STATUS_DATA_CONVERSION_FAILED = 0xE
+    RAC_STATUS_UNSUPPORTED_CFG = 0xF
+    RAC_STATUS_INVALID_FILE = 0x11
+    RAC_STATUS_FILE_OPEN_FAILED = 0x12
+    RAC_STATUS_FILE_READ_FAILED = 0x13
+    RAC_STATUS_FILE_WRITE_FAILED = 0x14
+    RAC_STATUS_RAC_NOT_PRESENT = 0x15
+    RAC_STATUS_RAC_NOT_READY = 0x16
+    RAC_STATUS_IPMI_NOT_READY = 0x17
+    RAC_STATUS_LOAD_LIB_FAILED = 0x18
+    RAC_STATUS_BUSY = 0x19
 
 class Racadm(object):
 
@@ -44,6 +44,7 @@ class Racadm(object):
         self.password = password
         self.port = port
         self.verify = verify
+        self.last_message = None
         logging.basicConfig(level=log_level)
         self.session = requests.Session()
         self.cgiuri = 'https://{}:{}/cgi-bin/'.format(self.hostname, self.port)
@@ -90,8 +91,8 @@ class Racadm(object):
     def _parse_command(self, response, command):
         '''check that command succeeded'''
 
-        command_status = int(self._search_xml(response, 'CMDRC').split('x')[1])
-        command_output = self._search_xml(response, 'CMDOUTPUT')
+        command_status = int(self._search_xml(response, 'CMDRC'),16)
+        command_output = self._search_xml(response, 'CMDOUTPUT').strip()
         logging.debug('STATUS: {}, OUTPUT: {}'.format(command_status, command_output))
         if command_status == RacStatus.RAC_STATUS_SUCCESS:
             logging.info('racadm {} Successful'.format(command))
@@ -102,7 +103,8 @@ class Racadm(object):
         else:
             logging.warn('racadm {} failed with status {}: {}'.format(command, command_status, 
                 command_output))
-        return command_status, command_output.strip()
+        self.last_message = command_output 
+        return command_status, command_output
 
     def _convert_rac_time(self, date_str):
         '''convert string date of the form Thu Feb  6 06:38:14 2014 to datetime'''
@@ -129,19 +131,6 @@ class Racadm(object):
         content = self._get_response(uri, payload)
         return self._parse_command(content, command)
 
-    def vmdisconnect(self):
-        '''run racadm vmdisconnect'''
-        status, message = self._raw_command('vmdisconnect')
-        if status == RacStatus.RAC_STATUS_FAILED or \
-                (status ==  RacStatus.RAC_STATUS_FAILED and \
-                message == 'No Virtual Media devices are currently connected.'):
-            return True;
-        else:
-            return False
-
-    def serveraction(self, action):
-        '''perform the sever action'''
-
     def get_arp_table(self):
         '''return arp table'''
         status, message = self._raw_command('arp')
@@ -161,7 +150,7 @@ class Racadm(object):
         '''run a command that needs no processing'''
         status, message = self._raw_command(command)
         if status == RacStatus.RAC_STATUS_SUCCESS:
-            return True
+            return message
         return False
 
     def clear_log(self, log_type='rac'):
@@ -177,12 +166,94 @@ class Racadm(object):
     def get_asset_tag(self, module='chassis'):
         '''rtrive the Dell assit tag'''
         #i dont have anything to test this on
+        logging.warn('This method is untested')
         return self.basic_command('getassettag -m {}'.format(module))
             
     def get_chassis_name(self):
         '''get the Dell chassis name'''
         #i dont have anything to test this on
+        logging.warn('This method is untested')
         return self.basic_command('chassisname')
+
+    def get_sensor_info(self):
+        '''get the Dell chassis name'''
+        #im not parsing this output. its to fucked 
+        return self.basic_command('getsensorinfo')
+
+    def get_service_tag(self):
+        '''get the Dell chassis name'''
+        return self.basic_command('getsvctag')
+
+    def get_usc_version(self):
+        '''get the Dell chassis name'''
+        return self.basic_command('getuscversion')
+
+    def get_rac_reset(self):
+        '''get the Dell chassis name'''
+        return self.basic_command('racreset')
+
+    def get_software_inventory(self):
+        '''get the Dell chassis name'''
+        inventory = []
+        item = {}
+        result = self.basic_command('swinventory')
+        for line in result.split('\n'):
+            if '--------------------------------------' in line:
+                inventory.append(item)
+                item = {}
+            elif '=' in line:
+                key, value = line.split('=')
+                item.update({key.strip().replace(' ', '_') : value.strip()})
+                
+        return inventory
+
+    def get_version(self):
+        '''get the Dell chassis name'''
+        versions = {}
+        result = self.basic_command('getversion')
+        for line in result.split('\n'):
+            if '=' in line:
+                version = line.split('=')
+                version_type = version[0].strip().replace(' ','_').lower()
+                versions[version_type] = version[1].strip()
+        return versions
+ 
+    def get_session_info(self):
+        '''get the Dell chassis name'''
+        #
+        sessions = []
+        results = self.basic_command('getssninfo')
+        if results:
+            for line in results.split('\n'):
+                #Currently the title splits to 7 elements so this should work
+                if len(colums) == 6:
+                    #Not sure what D stands for here but may as well keep it
+                    date_str = '{}{}'.format(colums[4].replace('/',''),colums[5].replace(':',''))
+                    print date_str
+                    sessions.append({
+                        'd': colums[0], 
+                        'type': colums[1], 
+                        'user': colums[2], 
+                        'ip': colums[3], 
+                        'date': datetime.datetime.strptime(date_str,'%m%d%Y%H%M%S' )
+                        })
+
+        return sessions
+
+    def get_log(self, log_type):
+        '''get the Dell specified log type'''
+        logging.warn('This method is untested')
+        #getraclog returns no data
+        #getsel and gettracelog both responded with bad xml and
+        #ERROR: Unable to allocate memory for operation.
+        #It also sets CMDRC to 0x0 which is anoying
+        return self.basic_command({ 
+                'rac' : 'getraclog',
+                'sel' : 'getsel',
+                'trace' : 'gettracelog',
+                'lc' : 'lclog',
+        }.get(log_type.lower(), 'getraclog'))
+
 
     def _basic_table_command(self,command):
         '''parse a basic table'''
@@ -230,6 +301,79 @@ class Racadm(object):
 
         return rac_datetime
 
+   
+    def set_led(self, action):
+        '''get the Dell chassis name'''
+        action = { 'off': 0, 'no_blink': 0, 'no_blinking': 0, 'on': 1, 'blink': 1, 'blinking': 1,
+                }.get(action, action)
+        if action not in [0, 1]:
+            logging.warn('set_let not support action {}'.format(action))
+            return False
+        return self.basic_command('setled -l {}'.format(action))
+
+    def server_action(self, action='powerstatus'):
+        action = {
+                'status': 'powerstatus',
+                'cycle': 'powercycle',
+                'up': 'powerup',
+                'down': 'powerdown',
+                'reset': 'hardreset', 
+        }.get(action.lower(), action.lower())
+
+        valid_actions = ['powerstatus', 'powercycle', 'powerup', 'powerdown', 'hardreset' ]
+        if action not in valid_actions:
+            logging.warn('action {} not supported'.format(action))
+            return False
+        return self.basic_command('serveraction {}'.format(action))
+
+    def ping(self, address, address_family=4):
+        if int(address_family) not in [4,6]:
+            logging.warn('address_family {} not supported'.format(address_family))
+            return False
+        command = 'ping {}'.format(address)
+        if int(address_family) == 6:
+            command = 'ping6 {}'.format(address)
+        return self.basic_command(command)
+
+    def traceroute(self, address, address_family=4):
+        #didn't work for me i think it is timeing out
+        if int(address_family) not in [4,6]:
+            logging.warn('address_family {} not supported'.format(address_family))
+            return False
+        command = 'traceroute {}'.format(address)
+        if int(address_family) == 6:
+            command = 'traceroute6 {}'.format(address)
+        return self.basic_command(command)
+
+    def vmdisconnect(self):
+        '''run racadm vmdisconnect'''
+        status, message = self._raw_command('vmdisconnect')
+        if status == RacStatus.RAC_STATUS_FAILED or \
+                (status ==  RacStatus.RAC_STATUS_FAILED and \
+                message == 'No Virtual Media devices are currently connected.'):
+            return True;
+        else:
+            return False
+
+    def _vflashd(self, action):
+        raise NotImplementedError('Dont have a system to test this on') 
+
+    def _vflashd(self, action):
+        if action not in ['status', 'initialize']:
+            logging.warn('action {} not supported'.format(action))
+            return False
+        return self.basic_command('vflashsd {}'.format(action))
+
+    def vflash_status(self):
+        return self._vflashd('status')
+
+    def vflash_initialise(self):
+        return self._vflashd('initialize')
+
+    def vflash_initialize(self):
+        '''american spelling'''
+        return self._vflashd('initialize')
+
 def arg_parse():
     '''argument parsing function'''
 
@@ -247,7 +391,7 @@ def main():
     args = arg_parse()
     racadm = Racadm(args.hostname, args.username, args.password, 
             args.port, log_level=logging.DEBUG)
-    racadm.get_system_info()
+    print racadm.get_session_info()
 
 if __name__ == '__main__':
     main()
