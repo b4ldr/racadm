@@ -254,11 +254,35 @@ class Racadm(object):
                 'lc' : 'lclog',
         }.get(log_type.lower(), 'getraclog'))
 
+    def _basic_table_command(self, command):
+        '''very generic table parser'''
+        parsed_table ={}
+        parsed_items = {}
+        section = None
+        status, message = self._raw_command(command)
+        if status == RacStatus.RAC_STATUS_SUCCESS:
+            for line in message.split('\n'):
+                if ':' in line and '=' not in line:
+                    #we are in a new section
+                    sections = line.split(':')
+                    #this is a hack for the HW inventory
+                    if sections[0] == '[InstanceID':
+                        section = sections[1].strip().replace(' ','_').replace(']',' ')
+                    else:
+                        section = sections[0].strip().replace(' ','_')
+                    parsed_table[section] = {}
+                elif '=' in line:
+                    key, value = line.split('=')
+                    parsed_table[section].update({ 
+                        key.strip().replace(' ','_') :
+                        value.strip()})
+            logging.debug('parsed {}: {}'.format(command, parsed_table)) 
+        return parsed_table 
 
-    def _basic_table_command(self,command):
+    def _basic_table_command_regex(self,command):
         '''parse a basic table'''
         parsed_table = {}
-        section_pattern = re.compile('\n?([^\n=]+[^:]):\n(.+?)\\n\\n', re.DOTALL)
+        section_pattern = re.compile('\n?([^\n=]+[^:]):.*?\n(.+?)\\n\\n', re.DOTALL)
         status, message = self._raw_command(command)
         if status == RacStatus.RAC_STATUS_SUCCESS:
             for section, settings in re.findall(section_pattern, message ):
@@ -279,6 +303,10 @@ class Racadm(object):
     def get_network_config(self):
         '''get the Dell network config'''
         return self._basic_table_command('getniccfg')
+
+    def get_hardware_inventory(self):
+        '''get the Dell network config'''
+        return self._basic_table_command('hwinventory')
 
     def get_led_state(self):
         '''rtrive the Dell chassis name'''
