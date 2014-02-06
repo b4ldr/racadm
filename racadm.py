@@ -104,7 +104,15 @@ class Racadm(object):
                 command_output))
         return command_status, command_output.strip()
 
-
+    def _convert_rac_time(self, date_str):
+        '''convert string date of the form Thu Feb  6 06:38:14 2014 to datetime'''
+        months = { 'Jan': 1, 'Feb':2, 'Mar':3, 'Apr':4, 'May':5, 'Jun':6,
+                'Jul':7, 'Aug':8, 'Sep':9, 'Oct':10, 'Nov':11, 'Dec':12}
+        date_tmp = date_str.split()
+        time_tmp = date_tmp[3].split(':')
+        return datetime.datetime(int(date_tmp[4]), int(months[date_tmp[1]]), int(date_tmp[2]), 
+                int(time_tmp[0]), int(time_tmp[1]), int(time_tmp[2]))
+        
     def _raw_command(self, command):
         '''run the racadm command'''
 
@@ -148,6 +156,7 @@ class Racadm(object):
                 logging.debug('{} -> {}'.format(mac, ip))
                 arp_table.append({ 'ip': ip, 'mac': mac })
         return arp_table
+
     def basic_command(self, command):
         '''run a command that needs no processing'''
         status, message = self._raw_command(command)
@@ -175,6 +184,25 @@ class Racadm(object):
         #i dont have anything to test this on
         return self.basic_command('chassisname')
 
+    def get_network_config(self):
+        '''rtrive the Dell chassis name'''
+        #i dont have anything to test this on
+        network = {}
+        section_pattern = re.compile('\n?([^\n=]+[^:]):\n(.+?)\\n\\n', re.DOTALL)
+        status, message = self._raw_command('getniccfg')
+        if status == RacStatus.RAC_STATUS_SUCCESS:
+            for section, settings in re.findall(section_pattern, message ):
+                section_str = section.strip().replace(" ", "_")
+                if section_str not in network:
+                    network[section_str] = {}
+                for line in settings.split('\n'):
+                    key, value = line.split('=')
+                    network[section_str].update({ key.strip().replace(" ", "_")\
+                            : value.strip() })
+            logging.debug('parsed netconf: {}'.format(network))
+
+        return network
+
     def get_led_state(self):
         '''rtrive the Dell chassis name'''
         #i dont have anything to test this on
@@ -184,15 +212,7 @@ class Racadm(object):
             led_state = message.split(':')[1].strip()
             logging.debug('led state: {}'.format(led_state))
         return led_state
-    def _convert_rac_time(self, date_str):
-        '''convert string date of the form Thu Feb  6 06:38:14 2014 to datetime'''
-        months = { 'Jan': 1, 'Feb':2, 'Mar':3, 'Apr':4, 'May':5, 'Jun':6,
-                'Jul':7, 'Aug':8, 'Sep':9, 'Oct':10, 'Nov':11, 'Dec':12}
-        date_tmp = date_str.split()
-        time_tmp = date_tmp[3].split(':')
-        return datetime.datetime(int(date_tmp[4]), int(months[date_tmp[1]]), int(date_tmp[2]), 
-                int(time_tmp[0]), int(time_tmp[1]), int(time_tmp[2]))
-        
+
     def get_rac_time(self):
         '''rtrive the Dell chassis name'''
         #i dont have anything to test this on
@@ -221,7 +241,7 @@ def main():
     args = arg_parse()
     racadm = Racadm(args.hostname, args.username, args.password, 
             args.port, log_level=logging.DEBUG)
-    racadm.get_rac_time()
+    racadm.get_network_config()
 
 if __name__ == '__main__':
     main()
