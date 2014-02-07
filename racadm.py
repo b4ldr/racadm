@@ -509,12 +509,25 @@ class RacadmConfig(RacadmBase):
         @verify = whether to verify ssl certificates
         '''
         super(RacadmConfig, self).__init__(hostname, username, password, port, log_level, verify)
-        self.group = self,_get_real_group(group)
+        self.group = group
         self.has_index = has_index
         #these systems need an index
         if self.group in ['cfgUserAdmin', 'cfgEmailAlert', 'cfgLdapRoleGroup', 'cfgStandardSchema', 
                 'cfgIpmiPef', 'cfgServerPowerSupply', 'cfgVFlashPartition', 'cfgUserDomain', 'cfgSensorRedundancy']:
             self.has_index = True
+
+    def _parse_config_group(self, message):
+        '''
+        used to parse the date from _get_config.  which is mainly of the form 
+        key=value
+        however readonly valuse are prefixed with '#' so we chop that as well
+        '''
+        config = {}
+        for line in message.split('\n'):
+            if '=' in line:
+                key, value = line.lstrip('#').split('=')
+                config[key.strip()] = value.strip()
+        return config
 
     def _get_config(self, conf_group, conf_object=None, conf_index=None):
         '''
@@ -531,19 +544,6 @@ class RacadmConfig(RacadmBase):
         if conf_index:
             command += ' -i {}'.format(conf_index)
         return self.basic_command(command)
-
-    def _parse_config_group(self, message):
-        '''
-        used to parse the date from _get_config.  which is mainly of the form 
-        key=value
-        however readonly valuse are prefixed with '#' so we chop that as well
-        '''
-        config = {}
-        for line in message.split('\n'):
-            if '=' in line:
-                key, value = line.lstrip('#').split('=')
-                config[key.strip()] = value.strip()
-        return config
 
     def get_index(self, conf_index, conf_object=None):
         '''
@@ -567,10 +567,46 @@ class RacadmConfig(RacadmBase):
         '''
         if self.has_index:
             raise TypeError('{} must specifiy index use get_index() instead'.format(self.group))
-
         if conf_object:
             return self._get_config(self.group, conf_object)
         return self._parse_config_group(self._get_config(self.group))
+
+    def _set_config(self, conf_value, conf_object=None, conf_index=None):
+        '''
+        generic function to fetch config of the form
+        racadm setconfig -g ${conf_group} -o ${conf_object} -i ${conf_index}
+
+        @conf_group = the config group to query
+        @conf_object = the config object to query
+        @conf_index = the config index to query
+        '''
+        command = 'config -g {} -o {}'.format(self.group, conf_object)
+        if conf_index:
+            command += ' -i {}'.format(conf_index)
+        return self.basic_command('{} {}'.format(command, conf_value))
+
+    def set_index(self, conf_object, conf_index, conf_value):
+        '''
+        genreic function to set a config item that requiers an index
+        
+        @conf_group = group to query
+        @conf_index = index to query
+        @conf_object = object to query
+        '''
+        if not self.has_index:
+            raise TypeError('{} does not support Indexes use set() instead'.format(self.group))
+        return self._set_config(conf_value, conf_object, conf_index)
+
+    def set(self, conf_object, conf_value):
+        '''
+        genreic function to set a config item that requiers no index
+        
+        @conf_object = object to query
+        '''
+        if self.has_index:
+            raise TypeError('{} must specifiy index use set_index() instead'.format(self.group))
+        return self._set_config(conf_value, conf_object)
+
 
 def arg_parse():
     '''argument parsing function'''
