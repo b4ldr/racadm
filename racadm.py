@@ -4,6 +4,7 @@ import logging
 import re
 import datetime
 import xml.etree.ElementTree as ET
+import sys
 
 class RacStatus(object):
     '''Rac Status codes'''
@@ -34,7 +35,9 @@ class RacStatus(object):
     RAC_STATUS_LOAD_LIB_FAILED = 0x18
     RAC_STATUS_BUSY = 0x19
 
-class Racadm(object):
+
+
+class RacadmBase(object):
     '''Object used to interact with iDRAC servers'''
 
     def __init__(self, hostname='localhost', username='root', password='calvin', port=443, log_level=logging.INFO, verify=False):
@@ -171,6 +174,121 @@ class Racadm(object):
         content = self._get_response(uri, payload)
         return self._parse_command(content, command)
 
+    def basic_command(self, command):
+        '''
+        command wrapper to preform simple checks
+        
+        @command = command to run
+        '''
+        status, message = self._raw_command(command)
+        if status == RacStatus.RAC_STATUS_SUCCESS:
+            return message
+        return False
+
+
+class Racadm(RacadmBase):
+    '''base clase for an object'''
+
+    def __init__(self, hostname='localhost', username='root', password='calvin', port=443, log_level=logging.INFO, verify=False):
+        '''
+        initialise variables
+        @hostname = the iDrac hostname to connect to
+        @username = usernem to use for login
+        @password = usernem to use for login
+        @port = server port to connect to
+        @log_level = looggin level to use as implmented by the loggin module
+        @verify = whether to verify ssl certificates
+        '''
+        super(Racadm, self).__init__(hostname, username, password, port, log_level, verify)
+
+    def set_led(self, state):
+        '''
+        set the led to a specific state
+        
+        @state = the state you want the led to be in
+        '''
+        action = { 'off': 0, 'no_blink': 0, 'no_blinking': 0, 'on': 1, 'blink': 1, 'blinking': 1,
+                }.get(state, state)
+        if action not in [0, 1]:
+            logging.warn('set_let not support action {}'.format(state))
+            return False
+        return self.basic_command('setled -l {}'.format(state))
+
+    def server_action(self, action='powerstatus'):
+        action = {
+                'status': 'powerstatus',
+                'cycle': 'powercycle',
+                'up': 'powerup',
+                'down': 'powerdown',
+                'reset': 'hardreset', 
+        }.get(action.lower(), action.lower())
+
+        valid_actions = ['powerstatus', 'powercycle', 'powerup', 'powerdown', 'hardreset' ]
+        if action not in valid_actions:
+            logging.warn('action {} not supported'.format(action))
+            return False
+        return self.basic_command('serveraction {}'.format(action))
+
+    def ping(self, address, address_family=4):
+        '''
+        ping an ip from the drac interface
+
+        @address = the address to ping
+        @address_family = the ip version to use
+        '''
+        if int(address_family) not in [4,6]:
+            logging.warn('address_family {} not supported'.format(address_family))
+            return False
+        command = 'ping {}'.format(address)
+        if int(address_family) == 6:
+            command = 'ping6 {}'.format(address)
+        return self.basic_command(command)
+
+    def traceroute(self, address, address_family=4):
+        '''
+        traceroute an ip from the drac interface
+
+        @address = the address to ping
+        @address_family = the ip version to use
+        '''
+        #didn't work for me i think it is timeing out
+        if int(address_family) not in [4,6]:
+            logging.warn('address_family {} not supported'.format(address_family))
+            return False
+        command = 'traceroute {}'.format(address)
+        if int(address_family) == 6:
+            command = 'traceroute6 {}'.format(address)
+        return self.basic_command(command)
+
+    def vmdisconnect(self):
+        '''run racadm vmdisconnect'''
+        status, message = self._raw_command('vmdisconnect')
+        if status == RacStatus.RAC_STATUS_FAILED or \
+                (status ==  RacStatus.RAC_STATUS_FAILED and \
+                message == 'No Virtual Media devices are currently connected.'):
+            return True;
+        else:
+            return False
+
+    def _vflashd(self, action):
+        raise NotImplementedError('Dont have a system to test this on') 
+
+    def _vflashd(self, action):
+        if action not in ['status', 'initialize']:
+            logging.warn('action {} not supported'.format(action))
+            return False
+        return self.basic_command('vflashsd {}'.format(action))
+
+    def vflash_status(self):
+        return self._vflashd('status')
+
+    def vflash_initialise(self):
+        return self._vflashd('initialize')
+
+    def vflash_initialize(self):
+        '''american spelling'''
+        return self._vflashd('initialize')
+
     def get_arp_table(self):
         '''
         parse the arp table of the drac interface
@@ -187,17 +305,6 @@ class Racadm(object):
                 logging.debug('{} -> {}'.format(mac, ip))
                 arp_table.append({ 'ip': ip, 'mac': mac })
         return arp_table
-
-    def basic_command(self, command):
-        '''
-        command wrapper to preform simple checks
-        
-        @command = command to run
-        '''
-        status, message = self._raw_command(command)
-        if status == RacStatus.RAC_STATUS_SUCCESS:
-            return message
-        return False
 
     def clear_log(self, log_type='rac'):
         '''
@@ -229,7 +336,6 @@ class Racadm(object):
     def get_chassis_name(self):
         '''
         retrive the chassis name of a specific module
-
         WARN: untested
         '''
         #i dont have anything to test this on
@@ -240,7 +346,6 @@ class Racadm(object):
         '''
         Retrive the snesor details from drac card
         '''
-
         #im not parsing this output. its to fucked 
         return self.basic_command('getsensorinfo')
 
@@ -387,6 +492,30 @@ class Racadm(object):
 
         return rac_datetime
 
+
+
+class RacadmConfig(RacadmBase):
+    '''base clase for an object'''
+
+    def __init__(self, group, hostname='localhost', username='root', password='calvin', port=443, 
+            log_level=logging.INFO, verify=False, has_index=False):
+        '''
+        initialise variables
+        @hostname = the iDrac hostname to connect to
+        @username = usernem to use for login
+        @password = usernem to use for login
+        @port = server port to connect to
+        @log_level = looggin level to use as implmented by the loggin module
+        @verify = whether to verify ssl certificates
+        '''
+        super(RacadmConfig, self).__init__(hostname, username, password, port, log_level, verify)
+        self.group = self,_get_real_group(group)
+        self.has_index = has_index
+        #these systems need an index
+        if self.group in ['cfgUserAdmin', 'cfgEmailAlert', 'cfgLdapRoleGroup', 'cfgStandardSchema', 
+                'cfgIpmiPef', 'cfgServerPowerSupply', 'cfgVFlashPartition', 'cfgUserDomain', 'cfgSensorRedundancy']:
+            self.has_index = True
+
     def _get_config(self, conf_group, conf_object=None, conf_index=None):
         '''
         generic function to fetch config of the form
@@ -416,7 +545,7 @@ class Racadm(object):
                 config[key.strip()] = value.strip()
         return config
 
-    def _get_config_group_index(self, conf_group, conf_index, conf_object=None):
+    def get_index(self, conf_index, conf_object=None):
         '''
         genreic function to get a config item that requiers an index
         
@@ -424,257 +553,24 @@ class Racadm(object):
         @conf_index = index to query
         @conf_object = object to query
         '''
+        if not self.has_index:
+            raise TypeError('{} does not support Indexes use get() instead'.format(self.group))
         if conf_object:
-            return self._get_config(conf_group, conf_object, conf_index)
-        return self._parse_config_group(self._get_config(conf_group, conf_object, conf_index))
+            return self._get_config(self.group, conf_object, conf_index)
+        return self._parse_config_group(self._get_config(self.group, conf_object, conf_index))
 
-    def _get_config_group_no_index(self, conf_group, conf_object=None):
+    def get(self, conf_object=None):
         '''
         genreic function to get a config item that requiers no index
         
-        @conf_group = group to query
         @conf_object = object to query
         '''
+        if self.has_index:
+            raise TypeError('{} must specifiy index use get_index() instead'.format(self.group))
+
         if conf_object:
-            return self._get_config(conf_group, conf_object)
-        return self._parse_config_group(self._get_config(conf_group))
-
-    def get_rac_info(self, conf_object=None):
-        '''get idRacInfo'''
-        return self._get_config_group_no_index('idRacInfo', conf_object)
-
-    def get_remote_hosts(self, conf_object=None):
-        '''get cfgRemoteHosts'''
-        return self._get_config_group_no_index('cfgRemoteHosts', conf_object)
-
-    def get_user(self, conf_index, conf_object=None):
-        '''get cfgUserAdmin'''
-        return self._get_config_group_index('cfgUserAdmin', conf_index, conf_object)
-
-    def get_email_alert(self, conf_index, conf_object=None):
-        '''get cfgEmailAlert'''
-        return self._get_config_group_index('cfgEmailAlert', conf_index, conf_object)
-
-    def get_session_management(self, conf_object=None):
-        '''get cfgSessionManagement'''
-        return self._get_config_group_no_index('cfgSessionManagement', conf_object)
-
-    def get_serial(self, conf_object=None):
-        '''get cfgSerial'''
-        return self._get_config_group_no_index('cfgSerial', conf_object)
-
-    def get_oob_snmp(self, conf_object=None):
-        '''get cfgOobSnmp'''
-        return self._get_config_group_no_index('cfgOobSnmp', conf_object)
-
-    def get_rac_tuning(self, conf_object=None):
-        '''get cfgRacTuning'''
-        return self._get_config_group_no_index('cfgRacTuning', conf_object)
-
-    def get_rac_guest_os(self, conf_object=None):
-        '''get ifcRacManagedNodeOs'''
-        return self._get_config_group_no_index('ifcRacManagedNodeOs', conf_object)
-
-    def get_rac_security(self, conf_object=None):
-        '''get cfgRacSecurity'''
-        return self._get_config_group_no_index('cfgRacSecurity', conf_object)
-
-    def get_rac_virtual_media(self, conf_object=None):
-        '''get cfgRacVirtual'''
-        return self._get_config_group_no_index('cfgRacVirtual', conf_object)
-
-    def get_rac_active_directory(self, conf_object=None):
-        '''get cfgActiveDirectory'''
-        return self._get_config_group_no_index('cfgActiveDirectory', conf_object)
-
-    def get_rac_active_directory(self, conf_object=None):
-        '''get cfgActiveDirectory'''
-        return self._get_config_group_no_index('cfgActiveDirectory', conf_object)
-
-    def get_rac_ldap(self, conf_object=None):
-        '''get cfgLDAP'''
-        return self._get_config_group_no_index('cfgLDAP', conf_object)
-
-    def get_ldap_group(self, conf_index, conf_object=None):
-        '''get cfgLdapRoleGroup'''
-        return self._get_config_group_index('cfgLdapRoleGroup', conf_index, conf_object)
-
-    def get_rac_logging(self, conf_object=None):
-        '''get cfgLogging'''
-        return self._get_config_group_no_index('cfgLogging', conf_object)
-
-    def get_ad_schema(self, conf_index, conf_object=None):
-        '''get cfgStandardSchema'''
-        return self._get_config_group_index('cfgStandardSchema', conf_index, conf_object)
-
-    def get_rac_ipmi_serial(self, conf_object=None):
-        '''get cfgIpmiSerial'''
-        return self._get_config_group_no_index('cfgIpmiSerial', conf_object)
-
-    def get_rac_ipmi_sol(self, conf_object=None):
-        '''get cfgIpmiSol'''
-        return self._get_config_group_no_index('cfgIpmiSol', conf_object)
-
-    def get_rac_ipmi_lan(self, conf_object=None):
-        '''get cfgIpmiLan'''
-        return self._get_config_group_no_index('cfgIpmiLan', conf_object)
-
-    def get_ipmi_v4_event_filter(self, conf_index, conf_object=None):
-        '''get cfgIpmiPef (not sure what this is)'''
-        return self._get_config_group_index('cfgIpmiPef', conf_index, conf_object)
-
-    def get_server_power(self, conf_object=None):
-        '''get cfgServerPower'''
-        return self._get_config_group_no_index('cfgServerPower', conf_object)
-
-    def get_server_power_supply(self, conf_index, conf_object=None):
-        '''get cfgServerPowerSupply'''
-        return self._get_config_group_index('cfgServerPowerSupply', conf_index, conf_object)
-
-    def get_vflash(self, conf_object=None):
-        '''get cfgVFlashSD'''
-        return self._get_config_group_no_index('cfgVFlashSD', conf_object)
-
-    def get_vflash_partition(self, conf_index, conf_object=None):
-        '''get cfgVFlashPartition'''
-        return self._get_config_group_index('cfgVFlashPartition', conf_index, conf_object)
-
-    def get_ad_user_domains(self, conf_index, conf_object=None):
-        '''get cfgUserDomain'''
-        return self._get_config_group_index('cfgUserDomain', conf_index, conf_object)
-
-    def get_smart_card(self, conf_object=None):
-        '''get cfgSmartCard'''
-        return self._get_config_group_no_index('cfgSmartCard', conf_object)
-
-    def get_server_info(self, conf_object=None):
-        '''get cfgServerInfo'''
-        return self._get_config_group_no_index('cfgServerInfo', conf_object)
-
-    def get_power_redundancy(self, conf_index, conf_object=None):
-        '''get cfgSensorRedundancy'''
-        return self._get_config_group_index('cfgSensorRedundancy', conf_index, conf_object)
-
-    def get_network_config(self, conf_object=None):
-        '''get cfgLanNetworking'''
-        return self._get_config_group_no_index('cfgLanNetworking', conf_object)
-
-    def get_static_network_config(self, conf_object=None):
-        '''get cfgStaticLanNetworking (not sure why we have this and the above?)'''
-        return self._get_config_group_no_index('cfgStaticLanNetworking', conf_object)
-
-    def get_ethernet_config(self, conf_object=None):
-        '''get cfgNetTuning '''
-        return self._get_config_group_no_index('cfgNetTuning', conf_object)
-
-    def get_v6_network_config(self, conf_object=None):
-        '''get cfgIPv6LanNetworking'''
-        return self._get_config_group_no_index('cfgIPv6LanNetworking', conf_object)
-
-    def get_static_v6_network_config(self, conf_object=None):
-        '''get cfgIPv6LanNetworking (not sure why we have this and the above?)'''
-        return self._get_config_group_no_index('cfgIPv6LanNetworking', conf_object)
-
-    def get_static_v6_url(self, conf_object=None):
-        '''get cfgIPv6URL (not sure what this is)'''
-        return self._get_config_group_no_index('cfgIPv6LanNetworking', conf_object)
-
-    def _set_config(self, conf_group, conf_arg, conf_obj=None, conf_index=None):
-        '''generic config setter'''
-        command = 'config -g {}'.format(conf_group)
-        if conf_obj:
-            command += ' -o {}'.format(conf_obj)
-            if conf_index:
-                command += ' -i {}'.format(conf_index)
-        return self.basic_command('{} {}'.format(command, conf_arg))
-   
-    def set_led(self, state):
-        '''
-        set the led to a specific state
-        
-        @state = the state you want the led to be in
-        '''
-        action = { 'off': 0, 'no_blink': 0, 'no_blinking': 0, 'on': 1, 'blink': 1, 'blinking': 1,
-                }.get(state, state)
-        if action not in [0, 1]:
-            logging.warn('set_let not support action {}'.format(state))
-            return False
-        return self.basic_command('setled -l {}'.format(state))
-
-    def server_action(self, action='powerstatus'):
-        action = {
-                'status': 'powerstatus',
-                'cycle': 'powercycle',
-                'up': 'powerup',
-                'down': 'powerdown',
-                'reset': 'hardreset', 
-        }.get(action.lower(), action.lower())
-
-        valid_actions = ['powerstatus', 'powercycle', 'powerup', 'powerdown', 'hardreset' ]
-        if action not in valid_actions:
-            logging.warn('action {} not supported'.format(action))
-            return False
-        return self.basic_command('serveraction {}'.format(action))
-
-    def ping(self, address, address_family=4):
-        '''
-        ping an ip from the drac interface
-
-        @address = the address to ping
-        @address_family = the ip version to use
-        '''
-        if int(address_family) not in [4,6]:
-            logging.warn('address_family {} not supported'.format(address_family))
-            return False
-        command = 'ping {}'.format(address)
-        if int(address_family) == 6:
-            command = 'ping6 {}'.format(address)
-        return self.basic_command(command)
-
-    def traceroute(self, address, address_family=4):
-        '''
-        traceroute an ip from the drac interface
-
-        @address = the address to ping
-        @address_family = the ip version to use
-        '''
-        #didn't work for me i think it is timeing out
-        if int(address_family) not in [4,6]:
-            logging.warn('address_family {} not supported'.format(address_family))
-            return False
-        command = 'traceroute {}'.format(address)
-        if int(address_family) == 6:
-            command = 'traceroute6 {}'.format(address)
-        return self.basic_command(command)
-
-    def vmdisconnect(self):
-        '''run racadm vmdisconnect'''
-        status, message = self._raw_command('vmdisconnect')
-        if status == RacStatus.RAC_STATUS_FAILED or \
-                (status ==  RacStatus.RAC_STATUS_FAILED and \
-                message == 'No Virtual Media devices are currently connected.'):
-            return True;
-        else:
-            return False
-
-    def _vflashd(self, action):
-        raise NotImplementedError('Dont have a system to test this on') 
-
-    def _vflashd(self, action):
-        if action not in ['status', 'initialize']:
-            logging.warn('action {} not supported'.format(action))
-            return False
-        return self.basic_command('vflashsd {}'.format(action))
-
-    def vflash_status(self):
-        return self._vflashd('status')
-
-    def vflash_initialise(self):
-        return self._vflashd('initialize')
-
-    def vflash_initialize(self):
-        '''american spelling'''
-        return self._vflashd('initialize')
+            return self._get_config(self.group, conf_object)
+        return self._parse_config_group(self._get_config(self.group))
 
 def arg_parse():
     '''argument parsing function'''
