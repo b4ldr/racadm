@@ -357,7 +357,7 @@ class Racadm(RacadmBase):
         '''get the usc versiob'''
         return self.basic_command('getuscversion')
 
-    def get_rac_reset(self):
+    def rac_reset(self):
         '''Reset the drac card'''
         return self.basic_command('racreset')
 
