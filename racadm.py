@@ -219,7 +219,7 @@ class RacadmBase(object):
             while tries < retry:
                 self.session.cookies['sid'] = 0
                 self.login_state = None
-                status, message = self.basic_command(command, 0)
+                status, message = self._raw_command(command)
                 if status == RacStatus.RAC_STATUS_SUCCESS:
                     break
                 tries += 1
