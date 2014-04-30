@@ -186,7 +186,7 @@ class RacadmBase(object):
         return datetime.datetime(int(date_tmp[4]), int(months[date_tmp[1]]), int(date_tmp[2]), 
                 int(time_tmp[0]), int(time_tmp[1]), int(time_tmp[2]))
         
-    def _raw_command(self, command, retry=1):
+    def _raw_command(self, command):
         '''
         run a raw racadm command
         
@@ -194,7 +194,6 @@ class RacadmBase(object):
         @retry = Number of time to retry the login
         ftp://ftp.dell.com/Manuals/all-products/esuprt_electronics/esuprt_software/esuprt_remote_ent_sys_mgmt/integrated-dell-remote-access-cntrllr-6-for-monolithic-srvr-v1.7_Reference%20Guide_en-us.pdf
         '''
-        tries = 0
         if self.login_state != 'OK':
             logging.debug('No valid session attempting login')
             if not self.login():
@@ -206,23 +205,24 @@ class RacadmBase(object):
                 '<CMDINPUT>racadm {}</CMDINPUT><MAXOUTPUTLEN>0x0fff</MAXOUTPUTLEN>'\
                 '</REQ></EXEC>'.format(command)
         content = self._get_response(uri, payload)
-        status, message = self._parse_command(content, command)
-        if status == RacStatus.RAC_STATUS_FAILED and tries < retry:
-            while tries < retry:
-                self.session.cookies['sid'] = 0
-                self.login_state = None
-                status, message = self._raw_command(command, 0)
-                if status RacStatus.RAC_STATUS_SUCCESS:
-                    break
-        return status, message
+        return self._parse_command(content, command)
 
-    def basic_command(self, command):
+    def basic_command(self, command, retry=1):
         '''
         command wrapper to preform simple checks
         
         @command = command to run
         '''
+        tries=0
         status, message = self._raw_command(command)
+        if status == RacStatus.RAC_STATUS_FAILED and tries < retry:
+            while tries < retry:
+                self.session.cookies['sid'] = 0
+                self.login_state = None
+                status, message = self._raw_command(command, 0)
+                if status == RacStatus.RAC_STATUS_SUCCESS:
+                    break
+                tries += 1
         if status == RacStatus.RAC_STATUS_SUCCESS:
             return message
         return False
