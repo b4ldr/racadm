@@ -212,7 +212,7 @@ class RacadmBase(object):
                 self.session.cookies['sid'] = 0
                 self.login_state = None
                 status, message = self._raw_command(command, 0)
-                if status:
+                if status RacStatus.RAC_STATUS_SUCCESS:
                     break
         return status, message
 
