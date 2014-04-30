@@ -97,8 +97,13 @@ class RacadmBase(object):
         sid = self._search_xml(response, 'SID')
         self.login_state = self._search_xml(response, 'STATENAME')
         logging.debug('SID:{}, STATE: {}'.format(sid, self.login_state))
+        if int(sid) == 0:
+            #This could loop for ever kmight want to have a counter
+            #possibly a sleep as well
+            logging.warn('Got invalid session, try again')
+            return self.login()
         if self.login_state == 'OK':
-            logging.info('Login Successful')
+            logging.debug('Login Successful')
             cookie = { 'sid': sid }
             self.session.cookies.update(cookie)
             return True
@@ -162,7 +167,7 @@ class RacadmBase(object):
         '''
 
         if self.login_state != 'OK':
-            logging.info('No valid session attempting login')
+            logging.debug('No valid session attempting login')
             if not self.login():
                 logging.error('login failed')
                 return False
@@ -193,7 +198,7 @@ class Racadm(RacadmBase):
         '''
         initialise variables
         @hostname = the iDrac hostname to connect to
-        @username = usernem to use for login
+        @username = usernem t  use for login
         @password = usernem to use for login
         @port = server port to connect to
         @log_level = looggin level to use as implmented by the loggin module
@@ -212,7 +217,7 @@ class Racadm(RacadmBase):
         if action not in [0, 1]:
             logging.warn('set_let not support action {}'.format(state))
             return False
-        return self.basic_command('setled -l {}'.format(state))
+        return self.basic_command('setled -l {}'.format(action))
 
     def server_action(self, action='powerstatus'):
         action = {
