@@ -165,15 +165,11 @@ class RacadmBase(object):
             logging.info('racadm {} Successful'.format(command))
         elif command_status == RacStatus.RAC_STATUS_FAILED:
             logging.warn('racadm {} failed: {}'.format(command, command_output))
-            self.sessions.cookies['sid'] = 0
-            self.login_state = None
         elif command_status == RacStatus.RAC_STATUS_INVALID_PARAMETER:
             logging.warn('racadm {} invalid command: {}'.format(command, command_output))
         else:
             logging.warn('racadm {} failed with status {}: {}'.format(command, command_status, 
                 command_output))
-            self.sessions.cookies['sid'] = 0
-            self.login_state = None
         self.last_message = command_output 
         return command_status, command_output
 
@@ -198,6 +194,7 @@ class RacadmBase(object):
         @retry = Number of time to retry the login
         ftp://ftp.dell.com/Manuals/all-products/esuprt_electronics/esuprt_software/esuprt_remote_ent_sys_mgmt/integrated-dell-remote-access-cntrllr-6-for-monolithic-srvr-v1.7_Reference%20Guide_en-us.pdf
         '''
+        tries = 0
         if self.login_state != 'OK':
             logging.debug('No valid session attempting login')
             if not self.login():
@@ -210,8 +207,14 @@ class RacadmBase(object):
                 '</REQ></EXEC>'.format(command)
         content = self._get_response(uri, payload)
         status, message = self._parse_command(content, command)
-        if status = RacStatus.RAC_STATUS_SUCCESS:
-            return status, message
+        if status == RacStatus.RAC_STATUS_FAILED and tries < retry:
+            while tries < retry:
+                self.session.cookies['sid'] = 0
+                self.login_state = None
+                status, message = self._raw_command(command, 0)
+                if status:
+                    break
+        return status, message
 
     def basic_command(self, command):
         '''
