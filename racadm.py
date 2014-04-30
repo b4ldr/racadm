@@ -5,6 +5,7 @@ import re
 import datetime
 import xml.etree.ElementTree as ET
 import sys
+import time
 
 class RacStatus(object):
     '''Rac Status codes'''
@@ -40,7 +41,8 @@ class RacStatus(object):
 class RacadmBase(object):
     '''Object used to interact with iDRAC servers'''
 
-    def __init__(self, hostname='localhost', username='root', password='calvin', port=443, log_level=logging.INFO, verify=False):
+    def __init__(self, hostname='localhost', username='root', password='calvin', port=443, log_level=logging.INFO, 
+            verify=False, session=requests.Session()):
         '''
         initialise variables
         @hostname = the iDrac hostname to connect to
@@ -51,16 +53,17 @@ class RacadmBase(object):
         @verify = whether to verify ssl certificates
         '''
 
+        self.last_message = None
+        self.session_id = None
+        self.login_state = None
         self.hostname = hostname
         self.username = username
         self.password = password
         self.port = port
         self.verify = verify
-        self.last_message = None
         logging.basicConfig(level=log_level)
-        self.session = requests.Session()
+        self.session = session
         self.cgiuri = 'https://{}:{}/cgi-bin/'.format(self.hostname, self.port)
-        self.login_state = None
 
     def _get_response(self, uri, payload):
         '''
@@ -98,9 +101,9 @@ class RacadmBase(object):
         self.login_state = self._search_xml(response, 'STATENAME')
         logging.debug('SID:{}, STATE: {}'.format(sid, self.login_state))
         if int(sid) == 0:
-            #This could loop for ever kmight want to have a counter
-            #possibly a sleep as well
-            logging.warn('Got invalid session, try again')
+            #This will probably break something
+            logging.warn('got invalid session try again')
+            time.sleep(1)
             return self.login()
         if self.login_state == 'OK':
             logging.debug('Login Successful')
@@ -110,11 +113,36 @@ class RacadmBase(object):
         logging.warn('Login Failed')
         return False
 
+    def set_session_id(self):
+        '''
+        We need to get the session ID which is different to the one we get back in the xml
+        we dont call this because we cant close it
+        '''
+
+        session_id = None
+        message = self.basic_command('getssninfo -A -u {}'.format(self.username))
+        #There is noway to ask for your session so we will assume we are the last racadm session
+        for line in message.split("\n"):
+            session = line.split()
+            if session[1] == '"RACADM"':
+                session_id = session[0].translate(None,'"')
+        self.session_id = session_id
+    def logout(self):
+        '''
+        Close the session so we are not stealling spaces
+        '''
+        #this dosn't work because 'Closing the executing session is not permitted.'
+        #return self.basic_command('closessn -i {}'.format(self.session_id))
+
     def login(self):
         '''
         Login to the drac server and get a cookie. Use details pased during initialisation
         '''
-        
+        if 'sid' in self.session.cookies and self.session.cookies['sid'] > 0:
+            logging.debug('We already have a session')
+            self.login_state = 'OK'
+            return True
+
         uri = '{}login'.format(self.cgiuri)
         payload = '<?xml version=\'1.0\'?><LOGIN><REQ>'\
                 '<USERNAME>{}</USERNAME><PASSWORD>{}</PASSWORD>'\
@@ -194,7 +222,8 @@ class RacadmBase(object):
 class Racadm(RacadmBase):
     '''base clase for an object'''
 
-    def __init__(self, hostname='localhost', username='root', password='calvin', port=443, log_level=logging.INFO, verify=False):
+    def __init__(self, hostname='localhost', username='root', password='calvin', port=443, log_level=logging.INFO, 
+            verify=False, session=requests.Session()):
         '''
         initialise variables
         @hostname = the iDrac hostname to connect to
@@ -204,7 +233,7 @@ class Racadm(RacadmBase):
         @log_level = looggin level to use as implmented by the loggin module
         @verify = whether to verify ssl certificates
         '''
-        super(Racadm, self).__init__(hostname, username, password, port, log_level, verify)
+        super(Racadm, self).__init__(hostname, username, password, port, log_level, verify, session)
 
     def set_led(self, state):
         '''
@@ -503,7 +532,7 @@ class RacadmConfig(RacadmBase):
     '''base clase for an object'''
 
     def __init__(self, group, hostname='localhost', username='root', password='calvin', port=443, 
-            log_level=logging.INFO, verify=False, has_index=False):
+            log_level=logging.INFO, verify=False, has_index=False, session=requests.Session()):
         '''
         initialise variables
         @hostname = the iDrac hostname to connect to
@@ -513,7 +542,7 @@ class RacadmConfig(RacadmBase):
         @log_level = looggin level to use as implmented by the loggin module
         @verify = whether to verify ssl certificates
         '''
-        super(RacadmConfig, self).__init__(hostname, username, password, port, log_level, verify)
+        super(RacadmConfig, self).__init__(hostname, username, password, port, log_level, verify, session)
         self.group = group
         self.has_index = has_index
         #these systems need an index
