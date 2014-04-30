@@ -165,11 +165,15 @@ class RacadmBase(object):
             logging.info('racadm {} Successful'.format(command))
         elif command_status == RacStatus.RAC_STATUS_FAILED:
             logging.warn('racadm {} failed: {}'.format(command, command_output))
+            self.sessions.cookies['sid'] = 0
+            self.login_state = None
         elif command_status == RacStatus.RAC_STATUS_INVALID_PARAMETER:
             logging.warn('racadm {} invalid command: {}'.format(command, command_output))
         else:
             logging.warn('racadm {} failed with status {}: {}'.format(command, command_status, 
                 command_output))
+            self.sessions.cookies['sid'] = 0
+            self.login_state = None
         self.last_message = command_output 
         return command_status, command_output
 
@@ -186,14 +190,14 @@ class RacadmBase(object):
         return datetime.datetime(int(date_tmp[4]), int(months[date_tmp[1]]), int(date_tmp[2]), 
                 int(time_tmp[0]), int(time_tmp[1]), int(time_tmp[2]))
         
-    def _raw_command(self, command):
+    def _raw_command(self, command, retry=1):
         '''
         run a raw racadm command
         
         @command = command to run see the following for details
+        @retry = Number of time to retry the login
         ftp://ftp.dell.com/Manuals/all-products/esuprt_electronics/esuprt_software/esuprt_remote_ent_sys_mgmt/integrated-dell-remote-access-cntrllr-6-for-monolithic-srvr-v1.7_Reference%20Guide_en-us.pdf
         '''
-
         if self.login_state != 'OK':
             logging.debug('No valid session attempting login')
             if not self.login():
@@ -205,7 +209,9 @@ class RacadmBase(object):
                 '<CMDINPUT>racadm {}</CMDINPUT><MAXOUTPUTLEN>0x0fff</MAXOUTPUTLEN>'\
                 '</REQ></EXEC>'.format(command)
         content = self._get_response(uri, payload)
-        return self._parse_command(content, command)
+        status, message = self._parse_command(content, command)
+        if status = RacStatus.RAC_STATUS_SUCCESS:
+            return status, message
 
     def basic_command(self, command):
         '''
