@@ -41,7 +41,7 @@ class RacStatus(object):
 class RacadmBase(object):
     '''Object used to interact with iDRAC servers'''
 
-    def __init__(self, hostname='localhost', username='root', password='calvin', port=443, log_level=logging.INFO, 
+    def __init__(self, hostname='localhost', username='root', password='calvin', port=443, 
             verify=False, session=requests.Session()):
         '''
         initialise variables
@@ -61,7 +61,7 @@ class RacadmBase(object):
         self.password = password
         self.port = port
         self.verify = verify
-        logging.basicConfig(level=log_level)
+        self.logger = logging.getLogger('racadm.RacadmBase')
         self.session = session
         self.cgiuri = 'https://{}:{}/cgi-bin/'.format(self.hostname, self.port)
 
@@ -73,9 +73,10 @@ class RacadmBase(object):
         @payload = the payload to send (as a post)
         '''
 
-        logging.debug('>{}'.format(payload))
+        self.logger.debug('>{}'.format(payload))
+        #response = self.session.post(uri, data=payload)
         response = self.session.post(uri, data=payload, verify=self.verify)
-        logging.debug('<{}'.format(response.content))
+        self.logger.debug('<{}'.format(response.content))
         return response.content
 
     def _search_xml(self, xml_message, element):
@@ -99,18 +100,18 @@ class RacadmBase(object):
 
         sid = self._search_xml(response, 'SID')
         self.login_state = self._search_xml(response, 'STATENAME')
-        logging.debug('SID:{}, STATE: {}'.format(sid, self.login_state))
+        self.logger.debug('SID:{}, STATE: {}'.format(sid, self.login_state))
         if int(sid) == 0:
             #This will probably break something
-            logging.warn('got invalid session try again')
+            self.logger.warn('got invalid session try again')
             time.sleep(1)
             return self.login()
         if self.login_state == 'OK':
-            logging.debug('Login Successful')
+            self.logger.debug('Login Successful')
             cookie = { 'sid': sid }
             self.session.cookies.update(cookie)
             return True
-        logging.warn('Login Failed')
+        self.logger.warn('Login Failed')
         return False
 
     def set_session_id(self):
@@ -139,7 +140,7 @@ class RacadmBase(object):
         Login to the drac server and get a cookie. Use details pased during initialisation
         '''
         if 'sid' in self.session.cookies and self.session.cookies['sid'] > 0:
-            logging.debug('We already have a session')
+            self.logger.debug('We already have a session')
             self.login_state = 'OK'
             return True
 
@@ -160,15 +161,15 @@ class RacadmBase(object):
 
         command_status = int(self._search_xml(response, 'CMDRC'),16)
         command_output = self._search_xml(response, 'CMDOUTPUT').strip()
-        logging.debug('STATUS: {}, OUTPUT: {}'.format(command_status, command_output))
+        self.logger.debug('STATUS: {}, OUTPUT: {}'.format(command_status, command_output))
         if command_status == RacStatus.RAC_STATUS_SUCCESS:
-            logging.info('racadm {} Successful'.format(command))
+            self.logger.info('racadm {} Successful'.format(command))
         elif command_status == RacStatus.RAC_STATUS_FAILED:
-            logging.warn('racadm {} failed: {}'.format(command, command_output))
+            self.logger.warn('racadm {} failed: {}'.format(command, command_output))
         elif command_status == RacStatus.RAC_STATUS_INVALID_PARAMETER:
-            logging.warn('racadm {} invalid command: {}'.format(command, command_output))
+            self.logger.warn('racadm {} invalid command: {}'.format(command, command_output))
         else:
-            logging.warn('racadm {} failed with status {}: {}'.format(command, command_status, 
+            self.logger.warn('racadm {} failed with status {}: {}'.format(command, command_status, 
                 command_output))
         self.last_message = command_output 
         return command_status, command_output
@@ -191,13 +192,12 @@ class RacadmBase(object):
         run a raw racadm command
         
         @command = command to run see the following for details
-        @retry = Number of time to retry the login
         ftp://ftp.dell.com/Manuals/all-products/esuprt_electronics/esuprt_software/esuprt_remote_ent_sys_mgmt/integrated-dell-remote-access-cntrllr-6-for-monolithic-srvr-v1.7_Reference%20Guide_en-us.pdf
         '''
         if self.login_state != 'OK':
-            logging.debug('No valid session attempting login')
+            self.logger.debug('No valid session attempting login')
             if not self.login():
-                logging.error('login failed')
+                self.logger.error('login failed')
                 return False
 
         uri = '{}exec'.format(self.cgiuri)
@@ -212,6 +212,7 @@ class RacadmBase(object):
         command wrapper to preform simple checks
         
         @command = command to run
+        @retry = Number of time to retry the login
         '''
         tries=0
         status, message = self._raw_command(command)
@@ -231,7 +232,7 @@ class RacadmBase(object):
 class Racadm(RacadmBase):
     '''base clase for an object'''
 
-    def __init__(self, hostname='localhost', username='root', password='calvin', port=443, log_level=logging.INFO, 
+    def __init__(self, hostname='localhost', username='root', password='calvin', port=443, 
             verify=False, session=requests.Session()):
         '''
         initialise variables
@@ -242,7 +243,8 @@ class Racadm(RacadmBase):
         @log_level = looggin level to use as implmented by the loggin module
         @verify = whether to verify ssl certificates
         '''
-        super(Racadm, self).__init__(hostname, username, password, port, log_level, verify, session)
+        super(Racadm, self).__init__(hostname, username, password, port, verify, session)
+        self.logger = logging.getLogger('racadm.Racadm')
 
     def set_led(self, state):
         '''
@@ -253,7 +255,7 @@ class Racadm(RacadmBase):
         action = { 'off': 0, 'no_blink': 0, 'no_blinking': 0, 'on': 1, 'blink': 1, 'blinking': 1,
                 }.get(state, state)
         if action not in [0, 1]:
-            logging.warn('set_let not support action {}'.format(state))
+            self.logger.warn('set_let not support action {}'.format(state))
             return False
         return self.basic_command('setled -l {}'.format(action))
 
@@ -268,7 +270,7 @@ class Racadm(RacadmBase):
 
         valid_actions = ['powerstatus', 'powercycle', 'powerup', 'powerdown', 'hardreset' ]
         if action not in valid_actions:
-            logging.warn('action {} not supported'.format(action))
+            self.logger.warn('action {} not supported'.format(action))
             return False
         return self.basic_command('serveraction {}'.format(action))
 
@@ -280,7 +282,7 @@ class Racadm(RacadmBase):
         @address_family = the ip version to use
         '''
         if int(address_family) not in [4,6]:
-            logging.warn('address_family {} not supported'.format(address_family))
+            self.logger.warn('address_family {} not supported'.format(address_family))
             return False
         command = 'ping {}'.format(address)
         if int(address_family) == 6:
@@ -296,7 +298,7 @@ class Racadm(RacadmBase):
         '''
         #didn't work for me i think it is timeing out
         if int(address_family) not in [4,6]:
-            logging.warn('address_family {} not supported'.format(address_family))
+            self.logger.warn('address_family {} not supported'.format(address_family))
             return False
         command = 'traceroute {}'.format(address)
         if int(address_family) == 6:
@@ -318,7 +320,7 @@ class Racadm(RacadmBase):
 
     def _vflashd(self, action):
         if action not in ['status', 'initialize']:
-            logging.warn('action {} not supported'.format(action))
+            self.logger.warn('action {} not supported'.format(action))
             return False
         return self.basic_command('vflashsd {}'.format(action))
 
@@ -339,13 +341,13 @@ class Racadm(RacadmBase):
         status, message = self._raw_command('arp')
         arp_table = []
         if status == RacStatus.RAC_STATUS_SUCCESS:
-            logging.info('reviced arp table:\n{}'.format(message))
+            self.logger.info('reviced arp table:\n{}'.format(message))
             arp_raw = message.split('\n')
             for arp in arp_raw:
                 match_group = re.search('\(([0-9a-fA-F\.]+)\)\s+at\s+([0-9a-fA-F\:]+)', arp)
                 ip = match_group.group(1)
                 mac = match_group.group(2)
-                logging.debug('{} -> {}'.format(mac, ip))
+                self.logger.debug('{} -> {}'.format(mac, ip))
                 arp_table.append({ 'ip': ip, 'mac': mac })
         return arp_table
 
@@ -360,7 +362,7 @@ class Racadm(RacadmBase):
         elif log_type.lower() == 'sel':
             command = 'clrsel'
         else:
-            logging.warn('log type \'{}\' not supported')
+            self.logger.warn('log type \'{}\' not supported')
             return False
         return self.basic_command(command)
 
@@ -373,7 +375,7 @@ class Racadm(RacadmBase):
         WARN: untested
         '''
         #i dont have anything to test this on
-        logging.warn('This method is untested')
+        self.logger.warn('This method is untested')
         return self.basic_command('getassettag -m {}'.format(module))
             
     def get_chassis_name(self):
@@ -382,7 +384,7 @@ class Racadm(RacadmBase):
         WARN: untested
         '''
         #i dont have anything to test this on
-        logging.warn('This method is untested')
+        self.logger.warn('This method is untested')
         return self.basic_command('chassisname')
 
     def get_sensor_info(self):
@@ -445,7 +447,6 @@ class Racadm(RacadmBase):
                 if len(colums) == 6:
                     #Not sure what D stands for here but may as well keep it
                     date_str = '{}{}'.format(colums[4].replace('/',''),colums[5].replace(':',''))
-                    print date_str
                     sessions.append({
                         'd': colums[0], 
                         'type': colums[1], 
@@ -458,7 +459,7 @@ class Racadm(RacadmBase):
 
     def get_log(self, log_type):
         ''' get the Dell specified log type'''
-        logging.warn('This method is untested')
+        self.logger.warn('This method is untested')
         #getraclog returns no data
         #getsel and gettracelog both responded with bad xml and
         #ERROR: Unable to allocate memory for operation.
@@ -497,7 +498,7 @@ class Racadm(RacadmBase):
                     parsed_table[section].update({ 
                         key.strip().replace(' ','_') :
                         value.strip()})
-            logging.debug('parsed {}: {}'.format(command, parsed_table)) 
+            self.logger.debug('parsed {}: {}'.format(command, parsed_table)) 
         return parsed_table 
 
     def get_system_info(self):
@@ -519,7 +520,7 @@ class Racadm(RacadmBase):
         led_state = False
         if status == RacStatus.RAC_STATUS_SUCCESS:
             led_state = message.split(':')[1].strip()
-            logging.debug('led state: {}'.format(led_state))
+            self.logger.debug('led state: {}'.format(led_state))
         return led_state
 
     def get_rac_time(self):
@@ -531,7 +532,7 @@ class Racadm(RacadmBase):
         rac_datetime = False
         if status == RacStatus.RAC_STATUS_SUCCESS:
             rac_datetime = self._convert_rac_time(message)
-            logging.info('rac date: {}'.format(rac_datetime.ctime()))
+            self.logger.info('rac date: {}'.format(rac_datetime.ctime()))
 
         return rac_datetime
 
@@ -541,7 +542,7 @@ class RacadmConfig(RacadmBase):
     '''base clase for an object'''
 
     def __init__(self, group, hostname='localhost', username='root', password='calvin', port=443, 
-            log_level=logging.INFO, verify=False, has_index=False, session=requests.Session()):
+             verify=False, has_index=False, session=requests.Session()):
         '''
         initialise variables
         @hostname = the iDrac hostname to connect to
@@ -551,7 +552,8 @@ class RacadmConfig(RacadmBase):
         @log_level = looggin level to use as implmented by the loggin module
         @verify = whether to verify ssl certificates
         '''
-        super(RacadmConfig, self).__init__(hostname, username, password, port, log_level, verify, session)
+        super(RacadmConfig, self).__init__(hostname, username, password, port, verify, session)
+        self.logger = logging.getLogger('racadm.RacadmConfig')
         self.group = group
         self.has_index = has_index
         #these systems need an index
@@ -666,8 +668,9 @@ def arg_parse():
 def main():
     '''cli component of racadm'''
     args = arg_parse()
+    logging.basicConfig(level=logging.DEBUG)
     racadm = Racadm(args.hostname, args.username, args.password, 
-            args.port, log_level=logging.DEBUG)
+            args.port )
     print racadm.get_session_info()
 
 if __name__ == '__main__':
