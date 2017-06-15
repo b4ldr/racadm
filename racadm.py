@@ -196,6 +196,7 @@ class RacadmBase(object):
         '''
         if self.login_state != 'OK':
             self.logger.debug('No valid session attempting login')
+            del(self.session.cookies['sid'])
             if not self.login():
                 self.logger.error('login failed')
                 return False
