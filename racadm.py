@@ -444,6 +444,7 @@ class Racadm(RacadmBase):
         results = self.basic_command('getssninfo')
         if results:
             for line in results.split('\n'):
+                colums = re.split(r"\s+", line)
                 #Currently the title splits to 7 elements so this should work
                 if len(colums) == 6:
                     #Not sure what D stands for here but may as well keep it
